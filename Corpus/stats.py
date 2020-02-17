@@ -26,7 +26,7 @@ def get_probability(rnd, prob, p_type='cum'):
 
 def sum_dict(dict_a, dict_b):
     '''
-    Sum the values stored under the same keys in python dictionarys.
+    Sum the values stored under the same keys in python dictionaries.
     '''
     # loop through the keys and sum both values given
     if len(dict_a.keys()) == 0:
@@ -36,7 +36,7 @@ def sum_dict(dict_a, dict_b):
     else:
         sum_dict = dict()
         for key in dict_a.keys():
-            if dict_a[key] == None:
+            if dict_a[key] is None:
                 sum_dict.update({key:None})
             elif key != 'time':
                 sum_dict.update({key:dict_a[key]+dict_b[key]})
@@ -44,6 +44,29 @@ def sum_dict(dict_a, dict_b):
                 sum_dict.update({key:dict_a[key]})
     # and return
     return sum_dict
+
+def sum_dict2(dict_a, dict_b):
+    '''
+    Sum the values stored under the same keys in python dictionaries. Specifically for summing loads of shared appliances.
+    This sumation allows the set a maximum to the total load.
+    When one or more persons use the appliance the load is assigned (max) and when nobody is using the appliance the stanby load is assigned. 
+    '''
+    # loop through the keys and sum both values given
+    if len(dict_a.keys()) == 0:
+        sum_dict2 = dict_b
+    elif len(dict_b.keys()) == 0:
+        sum_dict2 = dict_a
+    else:
+        sum_dict2 = dict()
+        for key in dict_a.keys():
+            if dict_a[key] is None:
+                sum_dict2.update({key:None})
+            elif key != 'time':
+                sum_dict2.update({key:np.maximum(dict_a[key],dict_b[key])})#instead of summing both loads, take the maximum.
+            else:
+                sum_dict2.update({key:dict_a[key]})
+    # and return
+    return sum_dict2
 
 class MCSA(object):
     '''
@@ -100,7 +123,7 @@ class DTMC(object):
         self.ds = dict()
         for i in range(5):
             self.ds.update({i:data.get_actDict(clusterDict['wkdy'])})
-        self.ds.update({5:data.get_actDict(clusterDict['son'])})
+        self.ds.update({5:data.get_actDict(clusterDict['sat'])})
         self.ds.update({6:data.get_actDict(clusterDict['son'])})
     def get_var(self, dow, act, step):
         # get the probability of the given activity for daytype dow at step

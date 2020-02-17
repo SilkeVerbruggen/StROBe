@@ -23,6 +23,17 @@ sys.path.append("..")
 from Data.Households import households
 from Data.Appliances import set_appliances
 
+#changes for new cold-appliance fix #######################################
+# Based on 10000 runs, these new values combined with rule-based fix (see in def appliances)
+# lead to the same overall ownership as the original values.
+# We change it here so that the original remain in the Appliances file.
+set_appliances['Refrigerator']['owner']=0.27     # original:  0.430
+set_appliances['FridgeFreezer']['owner']=0.40    # original:  0.651
+set_appliances['ChestFreezer']['owner']=0.19     # original:  0.163
+set_appliances['UprightFreezer']['owner']=0.31   # original:  0.291
+
+####################################################################
+
 class Household(object):
     '''
     The Household class is the main class of ProclivityPy, defining the
@@ -72,7 +83,7 @@ class Household(object):
                     raise TypeError('Given membertypes is no List of strings.')
             # If no types are given, random statististics are applied
             else:
-                key = random.randint(0, len(households))
+                key = random.randint(1, len(households))
                 members = households[key]
             # And return the members as list fo strings
             return members
@@ -90,6 +101,21 @@ class Household(object):
                     obj = Equipment(**set_appliances[app])
                     owner = obj.owner >= random.random()
                     app_n.append(app) if owner else None
+                    
+            # Cold appliances fix:   ###############################################        
+            if not ('FridgeFreezer' in app_n) and not ('Refrigerator' in app_n): # if there was none of the two-> add one of the two.
+                #  Find probability of household to own FF instead of R: (FF ownership over sum of two ownerships-> scale to 0-1 interval)
+                prob=set_appliances['FridgeFreezer']['owner']/(set_appliances['FridgeFreezer']['owner']+set_appliances['Refrigerator']['owner'])
+                # if random number is below prob, then the household will own a FF, otherwise a R -> add it
+                app_n.append('FridgeFreezer') if prob >= random.random()  else app_n.append('Refrigerator') 
+            
+            if 'FridgeFreezer' in app_n and 'ChestFreezer' in app_n and 'UprightFreezer' in app_n:  #if there were 3 freezers-> remove a freezer-only
+                #find probability of household to own CF instead of UF:  (CF ownership over sum of two ownerships-> scale to 0-1 interval)
+                prob=set_appliances['ChestFreezer']['owner']/(set_appliances['ChestFreezer']['owner']+set_appliances['UprightFreezer']['owner'])
+                # if random number is below prob, then the household will own a CF, otherwise an UF-> remove the other
+                app_n.remove('UprightFreezer') if prob >= random.random()  else app_n.remove('ChestFreezer') #remove the one you don't own
+                
+            #########################################################################
             return app_n
 
         def tappings():
@@ -118,12 +144,12 @@ class Household(object):
         self.taps = tappings()
         self.clusters = clusters(self.members)
         # and return
-        print 'Household-object created and parameterized.'
-        print ' - Employment types are %s' % str(self.members)
+        print ('Household-object created and parameterized.')
+        print (' - Employment types are %s' % str(self.members))
         summary = [] #loop dics and remove dubbles
         for member in self.clusters:
             summary += member.values()
-        print ' - Set of clusters is %s' % str(list(set(summary)))
+        print (' - Set of clusters is %s' % str(list(set(summary))))
 
         return None
 
@@ -305,8 +331,8 @@ class Household(object):
         # and print statements
         presence = [to for to in self.occ_m[0] if to < 2]
         hours = len(presence)/6.
-        print ' - Total presence time is {0:.1f} out of {1} hours'.format(hours, self.nday*24)
-        print '\tbeing {:.1f} percent)'.format(hours*100/(self.nday*24))
+        print (' - Total presence time is {0:.1f} out of {1} hours'.format(hours, self.nday*24))
+        print ('\tbeing {:.1f} percent)'.format(hours*100/(self.nday*24)))
         return None
 
     def __plugload__(self):
@@ -339,10 +365,26 @@ class Household(object):
                 r_app = dict()
                 n_app = 0
                 # loop for all household mmembers
+                print (app)
                 for i in counter:
-                    r_appi, n_appi = eq.simulate(nday, dow, self.clusters[i], self.occ[i])
-                    r_app = stats.sum_dict(r_app, r_appi)
-                    n_app += n_appi
+                    # if appliances are not shared the load of using the appliance can be summed for each householdmember
+                    if app in ('CordlessPhone','PC'): # it is assumed that only the cordlessphone and PC are not shared. Each person in the household (>12) has its own phone or PC.
+                        r_appi, n_appi = eq.simulate(nday, dow, self.clusters[i], self.occ[i])
+                        r_app = stats.sum_dict(r_app, r_appi)
+                        n_app += n_appi
+                    else:
+                        # if appliances are shared the load of using the appliance can be maximal the cycle load. 
+                        # if the appliance is an appliance that is working continously the load is simulated for only 1 person
+                        if app in ('FridgeFreezer', 'Refrigerator', 'ChestFreezer', 'UprightFreezer', 'Clock'):
+                            if i == 0:
+                                r_appi, n_appi = eq.simulate(nday, dow, self.clusters[i], self.occ[i])
+                                r_app = stats.sum_dict(r_app, r_appi)
+                                n_app += n_appi  
+                        # if the appliance is not continously used, but sometimes shared, the cycle load is assigned when minimal one person is using it, when nobody is using it the stanby load is assigned
+                        else:
+                            r_appi, n_appi = eq.simulate(nday, dow, self.clusters[i], self.occ[i])
+                            r_app = stats.sum_dict2(r_app, r_appi)
+                            n_app += n_appi
                 # and sum
                 result_n.update({app:n_app})
                 power += r_app['P']
@@ -350,7 +392,7 @@ class Household(object):
                 conv += r_app['QCon']
             # a new time axis for power output is to be created as a different
             # time step is used in comparison to occupancy
-            time = 4*60*600 + np.arange(0, (nmin+1)*60, 60)
+            time = 4*60*60 + np.arange(0, (nmin+1)*60, 60)
 
             react = np.zeros(nmin+1)
 
@@ -363,7 +405,7 @@ class Household(object):
             # output ##########################################################
             # only the power load is returned
             load = int(np.sum(result['P'])/60/1000)
-            print ' - Receptacle load is %s kWh' % str(load)
+            print (' - Receptacle load is %s kWh' % str(load))
 
             return None
 
@@ -378,12 +420,15 @@ class Household(object):
             # levels which determine the need for lighting if occupant.
             # The loaded solar data represent the global horizontal radiation
             # at a time-step of 1-minute for Uccle, Belgium
+            # Since the data starts at midnight, a shift to 4am is necessary
+            # so that it coincides with the occupancy data!!!
+            # the first 4 h are moved to the end. 
             os.chdir(r'../Data')
             file = open('Climate/irradiance.txt','r')
             data_pickle = file.read()
             file.close()
             irr = cPickle.loads(data_pickle)
-
+            irr = np.roll(irr,-240) # brings first 4h to end
             # script ##########################################################
             # a yearly simulation is basic, also in a unittest
             nday = self.nday
@@ -393,7 +438,7 @@ class Household(object):
             # the model is found on an ideal power level power_id depending on
             # irradiance level and occupancy (but not on light switching
             # behavior of occupants itself)
-            time = np.arange(0, (minutes+1)*60, 60)
+            time = 4*60*60 + np.arange(0, (minutes+1)*60, 60)
             to = -1 # time counter for occupancy
             tl = -1 # time counter for minutes in lighting load
             power_max = 200
@@ -414,7 +459,7 @@ class Household(object):
                     # determine all transitions of appliances depending on
                     # the appliance basic properties, ie. stochastic versus
                     # cycling power profile
-                    if occ_m[to] == 0:
+                    if occ_m[to] > int(1):
                         P[tl] = pow_id[tl]
                     elif random.random() <= prob_adj:
                         delta = P[tl-1] - pow_id[tl]
@@ -438,7 +483,7 @@ class Household(object):
             # output ##########################################################
             # only the power load is returned
             load = int(np.sum(result['P'])/60/1000)
-            print ' - Lighting load is %s kWh' % str(load)
+            print (' - Lighting load is %s kWh' % str(load))
 
             return None
 
@@ -471,7 +516,7 @@ class Household(object):
             flow += r_tap['mDHW']
         # a new time axis for power output is to be created as a different
         # time step is used in comparison to occupancy
-        time = 4*60*600 + np.arange(0, (nmin+1)*60, 60)
+        time = 4*60*60 + np.arange(0, (nmin+1)*60, 60)
 
         result = {'time':time, 'occ':None, 'P':None, 'Q':None,
                   'QRad':None, 'QCon':None, 'Wknds':None, 'mDHW':flow}
@@ -484,7 +529,7 @@ class Household(object):
         # only the power load is returned
         load = np.sum(result['mDHW'])
         loadpppd = int(load/self.nday/len(self.clusters))
-        print ' - Draw-off is %s l/pp.day' % str(loadpppd)
+        print (' - Draw-off is %s l/pp.day' % str(loadpppd))
 
         return None
 
@@ -546,7 +591,7 @@ class Household(object):
                 sh_settings.update({room:shnon})
         # and store
         self.sh_settings = sh_settings
-        print ' - Average comfort setting is %s Celsius' % str(round(np.average(sh_settings['dayzone']),2))
+        print (' - Average comfort setting is %s Celsius' % str(round(np.average(sh_settings['dayzone']),2)))
         return None
 
     def roundUp(self):
@@ -564,6 +609,17 @@ class Household(object):
         self.QRad = self.r_receptacles['QRad'] + self.r_lighting['QRad']
         self.QCon = self.r_receptacles['QCon'] + self.r_lighting['QCon']
         self.mDHW = self.r_flows['mDHW']
+
+        #######################################################################        
+        # bring last 4 h to the front so that data starts at midnight
+        self.sh_day = np.roll(self.sh_day,24)
+        self.sh_night = np.roll(self.sh_night,24)
+        self.sh_bath = np.roll(self.sh_bath,24)
+        self.P = np.roll(self.P,240)
+        self.Q = np.roll(self.Q,240)
+        self.QRad = np.roll(self.QRad,240)
+        self.QCon = np.roll(self.QCon,240)
+        self.mDHW = np.roll(self.mDHW,240)
 
         #######################################################################
         # then we delete the old data structure to save space
@@ -639,7 +695,7 @@ class Equipment(object):
                         if random.random() < prob * self.cal:
                             n_fl += 1
                             left = random.gauss(len_cycle, len_cycle/10)
-                            flow[tl] += self.standby_flow
+                        flow[tl] += self.standby_flow
                     else:
                         left += -1
                         flow[tl] += self.cycle_flow
@@ -694,7 +750,7 @@ class Equipment(object):
                         if random.random() < prob * self.cal:
                             n_eq += 1
                             left = random.gauss(len_cycle, len_cycle/10)
-                            P[tl] += self.standby_power
+                        P[tl] += self.standby_power
                     else:
                         left += -1
                         P[tl] += self.cycle_power
@@ -707,22 +763,40 @@ class Equipment(object):
         def cycle_load(self, nday):
             '''
             Simulate cycling appliances, eg. fridges and freezers based on
-            average clycle length
+            average clycle length and delay between cycles
             '''
 
             nbin = nday*24*60
             P = np.zeros(nbin+1)
-            Q = np.zeros(nbin+1)
-            n_eq = 0
-            left = random.gauss(self.delay, self.delay/4)
-            for tl in range(nbin+1):
-                if left <= 0:
-                    n_eq += 1
-                    left += self.cycle_length
-                    P[tl] = self.cycle_power
-                else:
-                    left += -1
-                    P[tl] = self.standby_power
+            Q = np.zeros(nbin+1) #currently no data included (remains zero)
+            n_eq = 0 # number of cycles for calibration of `cal` parameter of appliance
+            
+            # define length of cycles (same for entire year, assumed to depend on appliance)
+            len_cycle=random.gauss(self.cycle_length, self.cycle_length/10)
+            # define duration of break between cycles (same for entire year)
+            delay=random.gauss(self.delay, self.delay/4)
+            
+            # start as OFF (assumption)
+            on=False #is it ON? 
+            left = delay # time left until change of state
+                       
+            for tl in range(nbin+1): # loop over every minute of the year
+                # if there is time LEFT until change of state, remain as is
+                # if time is up, change state:  
+                if left <= 0:  
+                    on=not on # switch to opposite state ON/OFF
+                    if on: # if switched ON
+                        n_eq += 1 # add one to cycle counter
+                        left = len_cycle #start counting 1 cycle length          
+                    else: # if switched OFF
+                        left = delay #start counting time until next cycle
+                # either way, count downt the time until next change of state    
+                left += -1  
+                # allocate correct power, depending on current state ON/OFF       
+                if on: 
+                    P[tl] = self.cycle_power # instead of the average consumption, could be sampled from normal distribution as well
+                else: 
+                    P[tl] = self.standby_power 
 
             r_eq = {'time':time, 'occ':None, 'P':P, 'Q':Q, 'QRad':P*self.frad,
                       'QCon':P*self.fconv, 'Wknds':None, 'mDHW':None}
