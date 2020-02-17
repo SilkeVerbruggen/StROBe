@@ -364,8 +364,7 @@ class Household(object):
                 eq = Equipment(**set_appliances[app])
                 r_app = dict()
                 n_app = 0
-                # loop for all household mmembers
-                print (app)
+                # loop for all household members
                 for i in counter:
                     # if appliances are not shared the load of using the appliance can be summed for each householdmember
                     if app in ('CordlessPhone','PC'): # it is assumed that only the cordlessphone and PC are not shared. Each person in the household (>12) has its own phone or PC.
