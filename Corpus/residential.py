@@ -364,26 +364,11 @@ class Household(object):
                 eq = Equipment(**set_appliances[app])
                 r_app = dict()
                 n_app = 0
-                # loop for all household members
+                # loop for all household mmembers
                 for i in counter:
-                    # if appliances are not shared the load of using the appliance can be summed for each householdmember
-                    if app in ('CordlessPhone','PC'): # it is assumed that only the cordlessphone and PC are not shared. Each person in the household (>12) has its own phone or PC.
-                        r_appi, n_appi = eq.simulate(nday, dow, self.clusters[i], self.occ[i])
-                        r_app = stats.sum_dict(r_app, r_appi)
-                        n_app += n_appi
-                    else:
-                        # if appliances are shared the load of using the appliance can be maximal the cycle load. 
-                        # if the appliance is an appliance that is working continously the load is simulated for only 1 person
-                        if app in ('FridgeFreezer', 'Refrigerator', 'ChestFreezer', 'UprightFreezer', 'Clock'):
-                            if i == 0:
-                                r_appi, n_appi = eq.simulate(nday, dow, self.clusters[i], self.occ[i])
-                                r_app = stats.sum_dict(r_app, r_appi)
-                                n_app += n_appi  
-                        # if the appliance is not continously used, but sometimes shared, the cycle load is assigned when minimal one person is using it, when nobody is using it the stanby load is assigned
-                        else:
-                            r_appi, n_appi = eq.simulate(nday, dow, self.clusters[i], self.occ[i])
-                            r_app = stats.sum_dict2(r_app, r_appi)
-                            n_app += n_appi
+                    r_appi, n_appi = eq.simulate(nday, dow, self.clusters[i], self.occ[i])
+                    r_app = stats.sum_dict(r_app, r_appi)
+                    n_app += n_appi
                 # and sum
                 result_n.update({app:n_app})
                 power += r_app['P']
@@ -485,8 +470,7 @@ class Household(object):
             print (' - Lighting load is %s kWh' % str(load))
 
             return None
-
-
+        
         def MetabolicHeat(self):
             '''
             Simulation of the metabolic heat gains.
@@ -541,7 +525,7 @@ class Household(object):
                 
 
             return None
-        
+
         receptacles(self)
         lightingload(self)
         MetabolicHeat(self)
